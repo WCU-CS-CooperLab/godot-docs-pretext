@@ -9,6 +9,16 @@ _build/
 .vscode/
 *.mo
 
+# generated pretext files
+pretext/source/*.ptx
+pretext/logs
+pretext/source/*
+pretext/output
+pretext/assets
+pretext/generated-assets
+pretext/.cache
+pretext/.error_schema.log
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
