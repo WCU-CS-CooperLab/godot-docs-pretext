@@ -1,16 +1,30 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v28)
+"""sphinx_xml_to_pretext.py  (v29)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v27 (this version):
-- Removed <introduction> entirely from convert_section and convert_doc_as.
-  PreTeXt <introduction> only works when its sibling sections are in the
-  same file; when siblings arrive via xi:include PreTeXt level-checker
-  fires before XInclude resolves them. Since content renders correctly
-  without <introduction>, all block content is now placed directly in
-  the structural container before any sections.
-- Same change applied to convert_section which had the same pattern.
+Key improvements over v28 (this version):
+- Smooth chapter navigation: clicking a chapter now lands on the first
+  section instead of showing a table of contents. The root cause was a
+  double-wrapping problem: Sphinx XML documents have a single root
+  <section> containing all content, and convert_doc_as was wrapping the
+  document in <chapter> then convert_section was wrapping the root section
+  in <section>, producing <chapter><section>content</section></chapter>.
+  PreTeXt renders a chapter with only a <section> child as a TOC page.
+  Fix: when convert_doc_as finds no body content and exactly one top-level
+  section (and no xi:include children pending), it hoists the section's
+  children directly into the chapter, with a <target> alias preserving
+  the old section xml:id for cross-reference compatibility.
+- Fixed missing code blocks at the top of the About/Introduction chapter.
+  The Sphinx XML builder renders sphinx-tabs (GDScript/C# code tab switchers)
+  as plain nested <container> elements with no class attributes, rather than
+  using sphinx-tabs-panel/sphinx-tabs-tab classes. The old code fell through
+  to the generic container handler which wrapped them in <remark> but lost
+  the literal_block content when label paragraphs and code were siblings.
+  New helpers _is_classless_tab_group and _convert_classless_tabs detect and
+  correctly extract code from this classless nested-container pattern.
+  Also added "container" to _CONTENT_TAGS so pages whose only content is a
+  code-tab block are not incorrectly treated as empty index pages.
 
 Key improvements over v26:
 - Removed <introduction> wrapper for has_xi_children case. PreTeXt
@@ -1261,28 +1275,51 @@ class Converter:
         # ---- sphinx-tabs container ----
         if tag == "container":
             classes = node.attrib.get("classes", "")
-            # Outer sphinx-tabs wrapper: recurse into panels, drop tab labels
+
+            # Outer sphinx-tabs wrapper (has sphinx-tabs class)
             if "sphinx-tabs" in classes:
                 return self._convert_sphinx_tabs(docname, node)
-            # Individual panel: just recurse
+
+            # Individual panel (has sphinx-tabs-panel class)
             if "sphinx-tabs-panel" in classes:
-                wrapper = ET.Element("p")  # placeholder; caller unwraps
                 blks = []
                 for ch in node:
                     blk = self.convert_block(docname, ch)
                     if blk is not None:
                         blks.append(blk)
+                if not blks:
+                    return None
                 if len(blks) == 1:
                     return blks[0]
-                # Multiple blocks: wrap in a remark (neutral container)
                 rem = ET.Element("remark")
                 for b in blks:
                     rem.append(b)
                 return rem
-            # Tab label container: suppress (it's just the button text)
+
+            # Tab label container: suppress
             if "sphinx-tabs-tab" in classes:
                 return None
-            # Other containers: recurse
+
+            # highlight-* containers are purely presentational wrappers
+            # Sphinx puts around code-blocks — unwrap and return content.
+            if any(c.startswith("highlight") for c in classes.split()):
+                blks = []
+                for ch in node:
+                    blk = self.convert_block(docname, ch)
+                    if blk is not None:
+                        blks.append(blk)
+                return blks[0] if blks else None
+
+            # Classless nested containers — this is how sphinx-tabs renders
+            # when the XML builder doesn't emit sphinx-tabs classes.
+            # Pattern: outer container whose children are all containers,
+            # each child having a paragraph (tab label) + literal_block (code).
+            # Detect: all direct children are <container> with no classes,
+            # and at least one grandchild is a literal_block.
+            if self._is_classless_tab_group(node):
+                return self._convert_classless_tabs(docname, node)
+
+            # Generic container: recurse and flatten
             blks = []
             for ch in node:
                 blk = self.convert_block(docname, ch)
@@ -1371,38 +1408,142 @@ class Converter:
             return p
         return None
 
+    def _is_classless_tab_group(self, node: ET.Element) -> bool:
+        """Detect the classless sphinx-tabs pattern from the XML builder.
+
+        When sphinx-tabs renders via Sphinx's XML builder it often emits
+        containers with no classes at all, structured like:
+
+          <container>                     ← outer (this node)
+            <container>                   ← one tab
+              <container>                 ← label wrapper
+                <paragraph>GDScript</paragraph>
+              </container>
+              <container>                 ← panel (may be empty)
+              </container>
+              <literal_block .../>        ← the actual code
+            </container>
+            <container> ... </container>  ← next tab
+          </container>
+
+        We detect this by checking: all direct children are classless
+        containers AND at least one grandchild subtree contains a
+        literal_block.
+        """
+        children = list(node)
+        if not children:
+            return False
+        # All direct children must be containers with no classes
+        for ch in children:
+            if strip_ns(ch.tag) != "container":
+                return False
+            if ch.attrib.get("classes", "").strip():
+                return False
+        # At least one grandchild subtree must have a literal_block
+        def _has_literal(n: ET.Element) -> bool:
+            if strip_ns(n.tag) == "literal_block":
+                return True
+            return any(_has_literal(c) for c in n)
+        return any(_has_literal(ch) for ch in children)
+
+    def _convert_classless_tabs(
+        self, docname: str, outer: ET.Element
+    ) -> Optional[ET.Element]:
+        """Convert classless sphinx-tabs containers into PreTeXt blocks.
+
+        Each direct child of outer is one tab.  Inside each tab:
+        - paragraph children are tab labels → suppressed
+        - literal_block children are the code → kept
+        - nested containers are recursed
+
+        We emit the first tab's code directly, and if there are multiple
+        tabs (e.g. GDScript + C#) we wrap them in a <remark> titled
+        "Code examples" so the reader sees all variants.
+        """
+        collected: List[ET.Element] = []
+
+        def _extract_code(tab: ET.Element) -> None:
+            """Pull literal_blocks out of a tab container, skip labels."""
+            for ch in tab:
+                ctag = strip_ns(ch.tag)
+                if ctag == "literal_block":
+                    blk = self.convert_block(docname, ch)
+                    if blk is not None:
+                        collected.append(blk)
+                elif ctag == "container":
+                    # Skip pure-label containers (only contain a paragraph)
+                    grandchildren = list(ch)
+                    if (len(grandchildren) == 1
+                            and strip_ns(grandchildren[0].tag) == "paragraph"):
+                        continue  # tab label — suppress
+                    # Empty panel container — skip
+                    if not grandchildren:
+                        continue
+                    # Otherwise recurse (could be the panel wrapper)
+                    _extract_code(ch)
+                elif ctag == "paragraph":
+                    pass  # tab label at top level — suppress
+                else:
+                    blk = self.convert_block(docname, ch)
+                    if blk is not None:
+                        collected.append(blk)
+
+        for tab_container in outer:
+            _extract_code(tab_container)
+
+        if not collected:
+            return None
+        if len(collected) == 1:
+            return collected[0]
+        rem = ET.Element("remark")
+        ET.SubElement(rem, "title").text = "Code examples"
+        for b in collected:
+            rem.append(b)
+        return rem
+
     def _convert_sphinx_tabs(self, docname: str, outer: ET.Element) -> Optional[ET.Element]:
         """Convert a sphinx-tabs container into sequential PreTeXt blocks.
 
-        Tab labels are suppressed; each panel's content is emitted in order.
-        If every panel contains exactly one literal_block, wrap as a
-        <listing> so readers see them as code alternatives.
+        The outer container has classes="sphinx-tabs" but its direct children
+        (individual tabs) may or may not have sphinx-tabs-panel classes.
+        The Sphinx XML builder often emits classless children structured as:
+
+          <container>                  ← one tab (no classes)
+            <container>                ← label wrapper (no classes)
+              <container>              ← inner label wrapper
+                <paragraph>GDScript</paragraph>
+              </container>
+            </container>
+            <container/>               ← empty panel placeholder
+            <literal_block .../>       ← the actual code
+          </container>
+
+        We handle both the classed and classless cases.
         """
+        # Case 1: children have sphinx-tabs-panel classes (older sphinx-tabs)
         panels = [
             c for c in outer
             if "sphinx-tabs-panel" in c.attrib.get("classes", "")
         ]
-        if not panels:
-            return None
+        if panels:
+            converted = []
+            for panel in panels:
+                for ch in panel:
+                    blk = self.convert_block(docname, ch)
+                    if blk is not None:
+                        converted.append(blk)
+            if not converted:
+                return None
+            if len(converted) == 1:
+                return converted[0]
+            rem = ET.Element("remark")
+            ET.SubElement(rem, "title").text = "Code examples"
+            for b in converted:
+                rem.append(b)
+            return rem
 
-        converted = []
-        for panel in panels:
-            for ch in panel:
-                blk = self.convert_block(docname, ch)
-                if blk is not None:
-                    converted.append(blk)
-
-        if not converted:
-            return None
-        if len(converted) == 1:
-            return converted[0]
-
-        # Multiple panels: wrap in a remark (neutral named container)
-        rem = ET.Element("remark")
-        ET.SubElement(rem, "title").text = "Code examples"
-        for b in converted:
-            rem.append(b)
-        return rem
+        # Case 2: classless children — delegate to classless tab handler
+        return self._convert_classless_tabs(docname, outer)
 
     def _convert_table(self, docname: str, node: ET.Element) -> Optional[ET.Element]:
         """Convert a Docutils table node to a PreTeXt <tabular>."""
@@ -1568,9 +1709,6 @@ class Converter:
                 continue
             if lname == "section":
                 seen_section = True
-                # depth=0 -> <section>, depth=1 -> <subsection>, etc.
-                # Use depth=0 so internal sections inside a chapter become
-                # <section> not <subsection>.
                 for s in self.convert_section(docname, child, depth=0):
                     sections.append(s)
                 continue
@@ -1581,6 +1719,50 @@ class Converter:
                 blocks_before.append(blk)
             else:
                 blocks_after.append(blk)
+
+        # Hoist single root section: if the document has no body content of
+        # its own and contains exactly one section, inline that section's
+        # children directly into the chapter rather than nesting
+        # <chapter><section>...</section></chapter>.  PreTeXt renders a
+        # chapter with only a <section> child as a TOC page rather than
+        # showing the content directly.
+        if (
+            not blocks_before
+            and not blocks_after
+            and len(sections) == 1
+            and not has_xi_children
+        ):
+            sole = sections[0]
+            sole_id = sole.get("xml:id")
+            # Only hoist when the section's xml:id matches the doc's top_id.
+            # When they differ, both ids may have live xrefs pointing at them
+            # from other documents, and XML only allows one xml:id per element.
+            # Hoisting in the mismatched case would orphan one set of xrefs.
+            if sole_id and sole_id != top_id:
+                # Different ids: register section id -> top_id alias so
+                # section-level xrefs resolve to the chapter, but don't hoist.
+                self.id_map[(docname, sole_id)] = top_id
+                self.id_map[(docname, norm_key(sole_id))] = top_id
+                # Fall through to normal rendering (section stays nested)
+                for b in blocks_before:
+                    container.append(b)
+                for s in sections:
+                    container.append(s)
+                for b in blocks_after:
+                    container.append(b)
+                return container
+            # Copy section title only if meaningfully different from chapter
+            chapter_title_text = get_all_text(title_node) if title_node is not None else ""
+            sole_title_el = next((c for c in sole if c.tag == "title"), None)
+            sole_title_text = get_all_text(sole_title_el) if sole_title_el is not None else ""
+            # Copy all children of the sole section into the chapter
+            for child_el in sole:
+                if child_el.tag == "title":
+                    if sole_title_text and sole_title_text != chapter_title_text:
+                        ET.SubElement(container, "title").text = sole_title_text
+                    continue
+                container.append(child_el)
+            return container
 
         # Place all content directly: blocks first, then sections.
         # No <introduction> or <conclusion> wrappers — these cause
@@ -1610,6 +1792,7 @@ class Converter:
         "literal_block", "note", "warning", "tip", "caution", "important",
         "table", "figure", "image", "block_quote", "definition_list",
         "field_list", "math_block", "rubric", "admonition",
+        "container",  # Sphinx wraps code-blocks in <container class="highlight*">
     })
 
     def _has_content(self, docname: str) -> bool:
@@ -1863,7 +2046,9 @@ class Converter:
                 continue
             elem = converted[docname]
 
-            for child in toc_children.get(docname, []):
+            children_to_include = toc_children.get(docname, [])
+
+            for child in children_to_include:
                 if child not in file_hrefs:
                     continue
                 parent_dir = os.path.dirname(file_paths[docname])
