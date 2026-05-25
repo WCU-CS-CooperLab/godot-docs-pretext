@@ -4,7 +4,7 @@ This repository contains the source files of [Godot Engine](https://godotengine.
 
 They are meant to be parsed with the [Sphinx](https://www.sphinx-doc.org/) documentation builder to build the HTML documentation on [Godot's website](https://docs.godotengine.org).
 
-There are also scripts to make a [PreTeXt](https://pretextbook.org) version of the book. For info open the [Pretext README file](pretext/README.MD)
+There are also scripts to make a [PreTeXt](https://pretextbook.org) version of the book. For info open the [Pretext README file](pretext/README.md)
 
 ## Download for offline use
 
