@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v34)
+"""sphinx_xml_to_pretext.py  (v35)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v34 (this version):
+Key improvements over v35 (this version):
+- Pass 3 now converts three additional categories of provisional xrefs to
+  external Godot documentation URLs (Fix #1, #3, #4 from the report analysis):
+  Fix #1: Bare CamelCase Godot class names (e.g. "Viewport", "CharacterBody3D")
+    from RST :class:`Foo` roles -> class_foo.html on the Godot API docs.
+    These account for ~1,313 provisional refs in the report.
+  Fix #3: shader-func-* labels (e.g. "shader-func-sin") from RST
+    :ref:`sin <shader-func-sin>` roles in the shading language reference ->
+    shading_language.html#shader-func-sin. (~77 refs)
+  Fix #4: Engine.* references split into two groups:
+    - Engine.<member> GDScript singleton refs (e.g. Engine.get_license_text)
+      -> class_engine.html#method-engine-<member-slug>
+    - Engine.prototype.* and JS-only names (load/unload/isWebGLAvailable)
+      -> html5_exportable_web.html#<ref>  (~19 refs total)
+
+Key improvements over v34:
 - Fixed remaining dangling xref @ref errors from PreTeXt. Pass 4a now
   collects all xml:ids actually written to output files, scans every xref
   @ref value against that set, and remaps any dangling ref to the nearest
@@ -458,59 +473,79 @@ def _slug_rescue_second_pass_files(ptx_paths: List[str]) -> Tuple[int, int]:
 
 
 # ---------------------------------------------------------------------------
-# Pass 3: class/enum ref -> external URL rewriter
+# Pass 3: external URL rewriter (class/enum refs, bare class names,
+#          shader-func refs, Engine.* API refs)
 # ---------------------------------------------------------------------------
 
-# Matches labels like:
-#   class-characterbody3d-method-move-and-slide
-#   class-control-property-mouse-filter
-#   class-visualshader-enum-type   (enum nested inside a class)
-#   enum-visualshader-type         (top-level enum)
-# Matches Godot cross-reference labels of the form:
-#   class-<classname>[-<member-kind>-<member-name>]
-#   enum-<classname>[-<enum-name>]    (top-level enum on a class page)
-#
-# Examples:
-#   class-characterbody3d-method-move-and-slide
-#   class-control-property-mouse-filter
-#   enum-visualshader-type              (top-level enum, class=visualshader)
-#   class-visualshader-enum-type        (enum member of VisualShader)
-#
-# Strategy: the classname is always the token immediately after the prefix.
-# Because classnames are single alphanumeric words and member kinds are a
-# fixed set, we match the classname greedily up to a known member-kind word
-# or end-of-string.
 _MEMBER_KINDS = r'(?:method|property|signal|constant|enum|theme-item|constructor|operator)'
 _CLASS_REF_RE = re.compile(
-    r'^(class|enum)-([a-z0-9]+)'                    # prefix + classname
-    r'(?:-(?:' + _MEMBER_KINDS + r')-(.+))?$'       # optional: -kind-membername
+    r'^(class|enum)-([a-z0-9]+)'
+    r'(?:-(?:' + _MEMBER_KINDS + r')-(.+))?$'
 )
-# Top-level enum: enum-<classname>-<enumname> with no member-kind word.
-# e.g. enum-visualshader-type  -> class=visualshader, page anchor = full label
 _TOP_ENUM_RE = re.compile(r'^enum-([a-z0-9]+)-(.+)$')
+
+# Godot Engine singleton members referenced as "Engine.member_name"
+# These come from :func:`Engine.get_license_text` etc. in RST.
+# The GDScript Engine singleton page is class_engine.html.
+_ENGINE_MEMBER_RE = re.compile(r'^Engine\.([A-Za-z_][A-Za-z0-9_]*)\(?\)?$')
+
+# HTML5 JS export API: Engine.prototype.* and Engine.load/unload/isWebGLAvailable
+# Documented at the HTML5 export page rather than the class reference.
+_ENGINE_JS_NAMES = frozenset({
+    "load", "unload", "isWebGLAvailable",
+})
 
 
 def _provisional_to_godot_url(prov: str, version: str) -> Optional[str]:
-    """Convert a class-/enum- provisional label to a Godot docs URL.
+    """Convert a provisional label to a Godot docs URL, or None if unrecognised.
 
-    The anchor fragment in the Godot HTML docs matches the label name exactly,
-    and the page is always class_{classname}.html under /classes/.
+    Handles:
+      class-*/enum-*  prefixed labels  -> /classes/class_<name>.html#<label>
+      CamelCase names                  -> /classes/class_<name_lower>.html
+      shader-func-*   labels           -> shading_language.html#<label>
+      Engine.<member> references       -> class_engine.html or html5 export page
     """
-    base = f"https://docs.godotengine.org/en/{version}/classes"
+    base_classes = f"https://docs.godotengine.org/en/{version}/classes"
+    base_tutorials = f"https://docs.godotengine.org/en/{version}/tutorials"
 
-    # Try the member-kind pattern first (class- and enum- with kind word)
+    # 1. class-*/enum-* prefixed labels (existing behaviour)
     m = _CLASS_REF_RE.match(prov)
     if m:
         classname = m.group(2)
-        page = f"{base}/class_{classname}.html"
-        return f"{page}#{prov}"
-
-    # Fallback: top-level enum label like enum-visualshader-type
+        return f"{base_classes}/class_{classname}.html#{prov}"
     m2 = _TOP_ENUM_RE.match(prov)
     if m2:
         classname = m2.group(1)
-        page = f"{base}/class_{classname}.html"
-        return f"{page}#{prov}"
+        return f"{base_classes}/class_{classname}.html#{prov}"
+
+    # 2. Bare CamelCase Godot class names e.g. "Viewport", "CharacterBody3D"
+    #    RST :class:`Viewport` -> provisional="Viewport"
+    if re.match(r'^[A-Z][a-zA-Z0-9]+$', prov):
+        classname_lower = prov.lower()
+        return f"{base_classes}/class_{classname_lower}.html"
+
+    # 3. shader-func-* labels e.g. "shader-func-sin"
+    #    These anchor into the shading language reference page.
+    if prov.startswith("shader-func-"):
+        anchor = prov  # anchor matches the label exactly
+        return (f"{base_tutorials}/shaders/shader_reference/"
+                f"shading_language.html#{anchor}")
+
+    # 4. Engine.* references
+    #    Engine.prototype.* and the three JS-only names -> HTML5 export page
+    #    All other Engine.<member> -> class_engine.html
+    m3 = _ENGINE_MEMBER_RE.match(prov)
+    if m3:
+        member = m3.group(1)
+        if member in _ENGINE_JS_NAMES:
+            return (f"{base_tutorials}/export/"
+                    f"html5_exportable_web.html#{prov.rstrip('()')}")
+        # GDScript Engine singleton member
+        member_slug = re.sub(r'[^a-z0-9]+', '-', member.lower()).strip('-')
+        return f"{base_classes}/class_engine.html#method-engine-{member_slug}"
+    if prov.startswith("Engine.prototype."):
+        return (f"{base_tutorials}/export/"
+                f"html5_exportable_web.html#{prov.rstrip('()')}")
 
     return None
 
@@ -518,12 +553,13 @@ def _provisional_to_godot_url(prov: str, version: str) -> Optional[str]:
 def _class_ref_third_pass(
     ptx_paths: List[str], godot_version: str = "stable"
 ) -> Tuple[int, int]:
-    """Pass 3: rewrite <xref provisional="class-*|enum-*"> as <url href="...">.
+    """Pass 3: rewrite provisional xrefs that map to external Godot docs URLs.
 
-    These labels refer to the Godot API class reference, which is a separate
-    repository and not part of the built XML.  Rather than leave them as
-    unresolved provisional xrefs, we convert them to external hyperlinks
-    pointing at the online Godot API documentation.
+    Handles (in order):
+      - class-*/enum-* prefixed labels  (Godot API class reference)
+      - bare CamelCase class names      (Fix #1: :class:`Foo` roles)
+      - shader-func-* labels            (Fix #3: shading language reference)
+      - Engine.<member> references      (Fix #4: Engine singleton / JS API)
 
     Returns (fixed, remaining_unmatched).
     """
@@ -542,17 +578,27 @@ def _class_ref_third_pass(
             if strip_ns(el.tag) != "xref":
                 continue
             prov = el.get("provisional", "")
-            if not (prov.startswith("class-") or prov.startswith("enum-")):
+            if not prov:
+                continue
+
+            # Only attempt conversion for patterns we recognise
+            is_candidate = (
+                prov.startswith("class-")
+                or prov.startswith("enum-")
+                or re.match(r'^[A-Z][a-zA-Z0-9]+$', prov)
+                or prov.startswith("shader-func-")
+                or prov.startswith("Engine.")
+            )
+            if not is_candidate:
+                remaining += 1
                 continue
 
             url = _provisional_to_godot_url(prov, godot_version)
             if url:
-                # Mutate the element in-place: xref -> url
                 el.tag = "url"
                 el.attrib.pop("provisional", None)
                 el.attrib.pop("text", None)
                 el.set("href", url)
-                # Use existing text if present, else fall back to the label
                 if not (el.text and el.text.strip()):
                     el.text = prov
                 fixed += 1
