@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v30)
+"""sphinx_xml_to_pretext.py  (v31)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
+
+Key improvements over v30 (this version):
+- report.json now contains a full audit of every provisional cross-reference
+  that survives all three passes and ends up in the final PTX output. The
+  new "provisional_xrefs_final" key is a list of objects, each with:
+    "provisional": the unresolved label/reftarget string
+    "text":        the visible link text (if any)
+    "file":        the PTX file containing it (relative to out_dir)
+  This replaces the old "unresolved_xrefs" count dict (which only captured
+  Pass 1 failures) and the raw "provisional_remaining_final" integer count.
+  Both old keys are retained for backward compatibility but the new list
+  gives actionable per-link detail needed for debugging.
 
 Key improvements over v29 (this version):
 - Fixed the most common remaining provisional cross-references: Godot RST
@@ -2157,6 +2169,27 @@ class Converter:
             chapter_paths, self.godot_version
         )
 
+        # --- Pass 4: audit all surviving provisional xrefs in output files ---
+        provisional_audit: List[Dict] = []
+        for p in chapter_paths:
+            try:
+                audit_root = ET.parse(p).getroot()
+            except Exception:
+                continue
+            rel = os.path.relpath(p, self.out_dir).replace(os.sep, "/")
+            for el in audit_root.iter():
+                if strip_ns(el.tag) != "xref":
+                    continue
+                prov = el.get("provisional")
+                if not prov:
+                    continue
+                visible = "".join(el.itertext()).strip()
+                provisional_audit.append({
+                    "provisional": prov,
+                    "text": visible,
+                    "file": rel,
+                })
+
         # --- Write main.ptx ---
         indent_xml(pre)
         ET.ElementTree(pre).write(
@@ -2179,7 +2212,8 @@ class Converter:
             "slug_rescue_fixed": slug_fixed,
             "provisional_remaining_after_slug_rescue": slug_remaining,
             "class_refs_converted_to_url": class_fixed,
-            "provisional_remaining_final": class_remaining,
+            "provisional_remaining_final": len(provisional_audit),
+            "provisional_xrefs_final": provisional_audit,
             "chapter_files_written": len(chapter_paths),
         }
         with open(
