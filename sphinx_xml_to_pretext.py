@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v32)
+"""sphinx_xml_to_pretext.py  (v33)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v32 (this version):
+Key improvements over v33 (this version):
+- Fixed dangling xrefs to transparent index docs. When _resolve_relative_refuri
+  resolves a relative file URI to a docname (e.g. "../importing_3d_scenes/index.html"
+  -> "tutorials/assets_pipeline/importing_3d_scenes/index"), that docname may
+  have been transparent (no body content, collapsed away by assign_chapter) and
+  therefore never written as a PTX element. PreTeXt then reports a dangling ref
+  because the xml:id exists in id_map but not in any output file.
+  Fix: after ordered_docs is built (so we know which docs are written vs
+  transparent), build a transparent_redirect map from each transparent docname
+  to the nearest written ancestor's xml:id by walking up toc_children. Both
+  _resolve_relative_refuri and resolve_ref step 4 consult this map before
+  returning, redirecting refs that would point at unwritten elements.
+
+Key improvements over v32:
 - Fixed relative refuri links ("Editor manual", "animation editor", etc.).
   Sphinx emits cross-document :ref: roles as <reference refuri="../editor/index.html">
   rather than <pending_xref reftarget="..."> when the target is in a different
@@ -717,6 +730,7 @@ class Converter:
         self._load_labels()
 
         self.unresolved_xrefs: Dict[str, int] = {}
+        self.transparent_redirect: Dict[str, str] = {}  # transparent docname -> written ancestor xml:id
         self.seen_counts: Dict[str, int] = {}
         self.unhandled_counts: Dict[str, int] = {}
 
@@ -962,25 +976,18 @@ class Converter:
             for pref in ("doc_", "doc-", "doc "):
                 if raw.startswith(pref):
                     remainder = raw[len(pref):]
-                    # The remainder may use underscores; convert to the slash-
-                    # separated docname format used in doc_to_path.
-                    # Try both the raw remainder and with underscores -> slashes.
-                    docname_cands = [remainder]
-                    # e.g. "editor_introduction" -> might be a flat docname
-                    # or nested like "tutorials/editor/introduction".
-                    # Walk doc_to_path for a suffix match.
                     for dn, ptx_id in self.doc_top_xmlid.items():
                         dn_flat = dn.replace("/", "_").replace("-", "_")
                         rem_flat = remainder.replace("-", "_").replace("/", "_")
                         if dn_flat == rem_flat or dn_flat.endswith("_" + rem_flat):
-                            return ptx_id
-                    # Direct lookup in doc_top_xmlid
+                            return self.transparent_redirect.get(dn) or ptx_id
                     result = self.doc_top_xmlid.get(remainder)
                     if result:
-                        return result
+                        return self.transparent_redirect.get(remainder) or result
                     result = self.doc_top_xmlid.get(remainder.replace("_", "/"))
                     if result:
-                        return result
+                        dn2 = remainder.replace("_", "/")
+                        return self.transparent_redirect.get(dn2) or result
                     break
 
         return None
@@ -1201,11 +1208,19 @@ class Converter:
         # Fall back to the document root xml:id
         result = self.doc_top_xmlid.get(target_docname)
         if result:
+            # Check if this doc was transparent (never written as a PTX element).
+            # If so, redirect to the nearest written ancestor to avoid dangling refs.
+            redirect = self.transparent_redirect.get(target_docname)
+            if redirect:
+                return redirect
             return result
 
         # Try case/separator variants
         for dn, pid in self.doc_top_xmlid.items():
             if dn.replace("/", "_").replace("-", "_") == target_docname.replace("/", "_").replace("-", "_"):
+                redirect = self.transparent_redirect.get(dn)
+                if redirect:
+                    return redirect
                 return pid
 
         return None
@@ -2177,6 +2192,38 @@ class Converter:
                     ordered_docs.append((section, ptx_level[section]))
                     for subsec in toc_children.get(section, []):
                         ordered_docs.append((subsec, ptx_level.get(subsec, "subsection")))
+
+        # Build a redirect map for transparent docs (not in ptx_level).
+        # When _resolve_relative_refuri resolves to a transparent docname,
+        # we need to redirect to the nearest written ancestor so PreTeXt
+        # doesn't get a dangling xref ref.
+        # transparent_redirect: docname -> xml:id of nearest written ancestor
+        transparent_redirect: Dict[str, str] = {}
+        ti_map = toctree_includes or {}
+
+        def _find_written_ancestor(dn: str, visited: set) -> Optional[str]:
+            """Walk up toctree parents to find the nearest written doc's xml:id."""
+            if dn in visited:
+                return None
+            visited.add(dn)
+            if dn in ptx_level:
+                return self.doc_top_xmlid.get(dn)
+            # Find parent: search toc_children for who lists dn as a child
+            for parent, children in toc_children.items():
+                if dn in children:
+                    return _find_written_ancestor(parent, visited)
+            # Also try toctree_includes in reverse
+            for parent, children in ti_map.items():
+                if dn in children:
+                    return _find_written_ancestor(parent, visited)
+            return None
+
+        for dn in self.doc_to_path:
+            if dn not in ptx_level:
+                ancestor_id = _find_written_ancestor(dn, set())
+                if ancestor_id:
+                    transparent_redirect[dn] = ancestor_id
+        self.transparent_redirect = transparent_redirect
 
         # --- Convert and write ---
         ET.register_namespace("xi", "http://www.w3.org/2001/XInclude")
