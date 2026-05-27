@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v31)
+"""sphinx_xml_to_pretext.py  (v32)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v30 (this version):
+Key improvements over v32 (this version):
+- Fixed relative refuri links ("Editor manual", "animation editor", etc.).
+  Sphinx emits cross-document :ref: roles as <reference refuri="../editor/index.html">
+  rather than <pending_xref reftarget="..."> when the target is in a different
+  document. The old reference handler only handled absolute URLs (http://) and
+  refid attributes; relative file URIs fell through to become provisional xrefs
+  with the visible text as the label (e.g. provisional="Editor manual").
+  Fix: added _resolve_relative_refuri() which strips the fragment, resolves
+  the relative path against the current docname's directory, and looks up the
+  resulting docname in doc_top_xmlid. Fragment anchors are also tried via
+  resolve_ref so deep-linked refs (e.g. index.html#some-section) resolve to
+  the specific section rather than just the page root.
+
+Key improvements over v30:
 - report.json now contains a full audit of every provisional cross-reference
   that survives all three passes and ends up in the final PTX output. The
   new "provisional_xrefs_final" key is a list of objects, each with:
@@ -1063,7 +1076,21 @@ class Converter:
                 u = ET.Element("url", {"href": refuri})
                 u.text = text or refuri
                 return u
-            # Internal Sphinx cross-reference without refid
+            # Relative file URI — resolve to a docname and look up its xml:id.
+            # Sphinx emits these for cross-document :ref: roles, e.g.:
+            #   refuri="../editor/index.html"
+            #   refuri="../../tutorials/editor/index.html#some-anchor"
+            if refuri:
+                resolved = self._resolve_relative_refuri(docname, refuri)
+                if resolved:
+                    if text:
+                        x = ET.Element("xref", {"ref": resolved, "text": "custom"})
+                        x.text = text
+                    else:
+                        x = ET.Element("xref", {"ref": resolved, "text": "title"})
+                    return x
+            # Internal Sphinx cross-reference without refid — fall back to
+            # provisional so slug-rescue can still attempt resolution.
             if text:
                 # Set text="custom" now so slug-rescue does not later combine
                 # text="title" with existing text content (deprecated pattern).
@@ -1113,6 +1140,75 @@ class Converter:
     # ------------------------------------------------------------------
     # Block node conversion
     # ------------------------------------------------------------------
+
+    def _resolve_relative_refuri(self, current_docname: str, refuri: str) -> Optional[str]:
+        """Resolve a relative file refuri to a PreTeXt xml:id.
+
+        Sphinx emits relative file URIs for cross-document references when
+        the HTML builder would produce a link like "../editor/index.html" or
+        "../../tutorials/editor/index.html#some-anchor".
+
+        Strategy:
+          1. Strip any fragment (#anchor) — we try to resolve to the fragment
+             id first, then fall back to the document root.
+          2. Resolve the relative path against the current docname's directory
+             to get an absolute docname (e.g. "tutorials/editor/index").
+          3. Look up that docname in doc_top_xmlid.  If the fragment matches
+             a registered id, return that; otherwise return the doc root id.
+        """
+        if not refuri or re.match(r'^[a-zA-Z]+://', refuri):
+            return None
+
+        # Split off fragment
+        fragment = ""
+        if "#" in refuri:
+            refuri, fragment = refuri.split("#", 1)
+
+        # Strip .html / .rst extension
+        refuri = re.sub(r'\.(html|rst|md)$', '', refuri)
+        refuri = refuri.replace("\\", "/")
+
+        # Resolve relative path against current docname directory
+        # e.g. current_docname="getting_started/introduction/first_look"
+        #      refuri="../../tutorials/editor/index"
+        #   -> "tutorials/editor/index"
+        base_dir = "/".join(current_docname.split("/")[:-1])
+        if base_dir:
+            joined = base_dir + "/" + refuri
+        else:
+            joined = refuri
+
+        # Normalise ../ segments
+        parts = []
+        for seg in joined.split("/"):
+            if seg == "..":
+                if parts:
+                    parts.pop()
+            elif seg and seg != ".":
+                parts.append(seg)
+        target_docname = "/".join(parts)
+
+        # Try fragment first (it may be a registered id in that doc)
+        if fragment:
+            resolved = self.resolve_ref(target_docname, fragment)
+            if resolved:
+                return resolved
+            # Also try globally
+            resolved = self.resolve_ref(current_docname, fragment)
+            if resolved:
+                return resolved
+
+        # Fall back to the document root xml:id
+        result = self.doc_top_xmlid.get(target_docname)
+        if result:
+            return result
+
+        # Try case/separator variants
+        for dn, pid in self.doc_top_xmlid.items():
+            if dn.replace("/", "_").replace("-", "_") == target_docname.replace("/", "_").replace("-", "_"):
+                return pid
+
+        return None
 
     def _make_id_attrs(
         self, docname: str, node: ET.Element
