@@ -1,9 +1,32 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v29)
+"""sphinx_xml_to_pretext.py  (v30)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v28 (this version):
+Key improvements over v29 (this version):
+- Fixed the most common remaining provisional cross-references: Godot RST
+  uses :ref:`Label Text <doc_some_page>` which Sphinx XML emits as
+  <pending_xref reftarget="doc_some_page">. These were failing to resolve
+  because:
+  (a) Sphinx stores doc-level labels with an empty nodeid ("") in the
+      environment pickle. resolve_ref's label_map lookup was calling
+      id_map.get((tdoc, "")) which never matched anything. Fix: when the
+      nodeid from label_map is empty, fall back to doc_top_xmlid[tdoc]
+      (the document's top-level xml:id) directly.
+  (b) resolve_ref had no fallback for the common Godot pattern
+      "doc_<pagename>" where the label name encodes the target docname.
+      Fix: added a new step 4 in resolve_ref that strips any "doc_"
+      prefix and looks up the remainder as a docname key in doc_top_xmlid.
+  (c) Pass 2 (slug rescue) was stripping "doc-" (hyphen) but not "doc_"
+      (underscore) prefix before slugifying, so "doc_editor_introduction"
+      slugified to "doc-editor-introduction" rather than
+      "editor-introduction". Fix: strip both "doc-" and "doc_" prefixes,
+      plus "doc " (space) as a defensive variant, before slug-matching.
+  Together these three fixes resolve the "Editor manual" and "animation
+  editor" provisional xrefs shown in the examples, and generalize to all
+  other Godot doc_* labels throughout the book.
+
+Key improvements over v28:
 - Smooth chapter navigation: clicking a chapter now lands on the first
   section instead of showing a table of contents. The root cause was a
   double-wrapping problem: Sphinx XML documents have a single root
@@ -315,7 +338,7 @@ def _slug_rescue_second_pass_files(ptx_paths: List[str]) -> Tuple[int, int]:
 
     Matching strategy (in order):
       1) slug(provisional text)
-      2) slug with common prefixes stripped
+      2) slug with common prefixes stripped (including doc_ and doc- variants)
       3) slug(visible link text)
     """
     idx = _build_global_title_slug_index(ptx_paths)
@@ -326,9 +349,17 @@ def _slug_rescue_second_pass_files(ptx_paths: List[str]) -> Tuple[int, int]:
         cands = []
         if prov:
             cands.append(_slugify_title(prov))
-            for pref in ("doc-", "class-", "sec-", "chapter-", "section-"):
+            # Strip common Sphinx label prefixes before slugifying.
+            # Godot uses "doc_" (underscore) extensively; we must handle both
+            # "doc-" and "doc_" since slugify converts "_" to "-" anyway.
+            for pref in ("doc-", "doc_", "doc ", "class-", "sec-",
+                         "chapter-", "section-"):
                 if prov.startswith(pref):
-                    cands.append(_slugify_title(prov[len(pref):]))
+                    remainder = prov[len(pref):]
+                    cands.append(_slugify_title(remainder))
+                    # Also try replacing underscores with spaces for title matching
+                    cands.append(_slugify_title(remainder.replace("_", " ")))
+                    break
         if visible:
             cands.append(_slugify_title(visible))
         seen: Set[str] = set()
@@ -710,8 +741,11 @@ class Converter:
         return None
 
     def _add_label(self, label: str, docname: str, nodeid: str) -> None:
-        if not label or not docname or not nodeid:
+        if not label or not docname:
             return
+        # Allow empty nodeid: Sphinx stores doc-level labels with nodeid=""
+        # meaning "the document root". resolve_ref handles the empty-nodeid
+        # case by falling back to doc_top_xmlid[docname].
         self.label_map.setdefault(label, (docname, nodeid))
         self.label_norm_map.setdefault(norm_key(label), (docname, nodeid))
 
@@ -855,9 +889,17 @@ class Converter:
                 return result
 
         # 2) Via label_map
+        # Sphinx stores doc-level labels with an empty nodeid (""), meaning
+        # "the document root". When nodeid is empty, fall back to
+        # doc_top_xmlid[tdoc] rather than trying id_map[(tdoc, "")].
         for c in cands:
             if c in self.label_map:
                 tdoc, tid = self.label_map[c]
+                if not tid:
+                    # Empty nodeid → doc-level label, return doc's top id
+                    result = self.doc_top_xmlid.get(tdoc)
+                    if result:
+                        return result
                 for t in (tid, tid.lower(), norm_key(tid),
                           tid.replace("-", "_"), tid.replace("_", "-")):
                     result = self.id_map.get((tdoc, t))
@@ -866,6 +908,10 @@ class Converter:
             nk = norm_key(c)
             if nk in self.label_norm_map:
                 tdoc, tid = self.label_norm_map[nk]
+                if not tid:
+                    result = self.doc_top_xmlid.get(tdoc)
+                    if result:
+                        return result
                 for t in (tid, tid.lower(), norm_key(tid),
                           tid.replace("-", "_"), tid.replace("_", "-")):
                     result = self.id_map.get((tdoc, t))
@@ -882,6 +928,36 @@ class Converter:
                     result = self.id_map.get((only_doc, k))
                     if result:
                         return result
+
+        # 4) doc_* docname pattern: Godot RST labels like "doc_editor_introduction"
+        # encode the target docname after the "doc_" or "doc-" prefix.
+        # Try stripping that prefix and resolving as a docname directly.
+        for c in cands:
+            raw = c
+            for pref in ("doc_", "doc-", "doc "):
+                if raw.startswith(pref):
+                    remainder = raw[len(pref):]
+                    # The remainder may use underscores; convert to the slash-
+                    # separated docname format used in doc_to_path.
+                    # Try both the raw remainder and with underscores -> slashes.
+                    docname_cands = [remainder]
+                    # e.g. "editor_introduction" -> might be a flat docname
+                    # or nested like "tutorials/editor/introduction".
+                    # Walk doc_to_path for a suffix match.
+                    for dn, ptx_id in self.doc_top_xmlid.items():
+                        dn_flat = dn.replace("/", "_").replace("-", "_")
+                        rem_flat = remainder.replace("-", "_").replace("/", "_")
+                        if dn_flat == rem_flat or dn_flat.endswith("_" + rem_flat):
+                            return ptx_id
+                    # Direct lookup in doc_top_xmlid
+                    result = self.doc_top_xmlid.get(remainder)
+                    if result:
+                        return result
+                    result = self.doc_top_xmlid.get(remainder.replace("_", "/"))
+                    if result:
+                        return result
+                    break
+
         return None
 
     # ------------------------------------------------------------------
