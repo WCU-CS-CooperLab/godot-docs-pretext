@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v33)
+"""sphinx_xml_to_pretext.py  (v34)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v33 (this version):
+Key improvements over v34 (this version):
+- Fixed remaining dangling xref @ref errors from PreTeXt. Pass 4a now
+  collects all xml:ids actually written to output files, scans every xref
+  @ref value against that set, and remaps any dangling ref to the nearest
+  written ancestor via transparent_redirect. This catches cases the earlier
+  transparent_redirect fix missed: section ids within transparent index docs
+  that were pre-registered by _preregister_all_ids but whose owning doc was
+  never written (e.g. tutorials-scripting-gdscript-index-gdscript, whose
+  docname tutorials/scripting/gdscript/index was transparent). The remap
+  count is reported as "dangling_xrefs_remapped" in report.json.
+
+Key improvements over v33:
 - Fixed dangling xrefs to transparent index docs. When _resolve_relative_refuri
   resolves a relative file URI to a docname (e.g. "../importing_3d_scenes/index.html"
   -> "tutorials/assets_pipeline/importing_3d_scenes/index"), that docname may
@@ -2312,6 +2323,68 @@ class Converter:
             chapter_paths, self.godot_version
         )
 
+        # --- Pass 4a: remap dangling xref @ref values to written ancestors ---
+        # Collect every xml:id that actually appears in a written PTX element.
+        # Any <xref ref="X"> where X is not in this set is dangling — the target
+        # was pre-registered but never written (transparent doc, hoisted section,
+        # etc.).  Remap those refs using transparent_redirect, or if that doesn't
+        # cover them, walk id_map in reverse to find the docname that owns X and
+        # redirect to that docname's nearest written ancestor.
+
+        # Build set of all xml:ids present in written output
+        written_ids: Set[str] = set()
+        for p in chapter_paths:
+            try:
+                r4 = ET.parse(p).getroot()
+            except Exception:
+                continue
+            for el in r4.iter():
+                xid = el.get("xml:id") or el.get("{http://www.w3.org/XML/1998/namespace}id")
+                if xid:
+                    written_ids.add(xid)
+
+        # Build reverse map: xml:id -> docname (from id_map)
+        id_to_docname: Dict[str, str] = {}
+        for (dn, _raw), ptx_id in self.id_map.items():
+            id_to_docname.setdefault(ptx_id, dn)
+
+        def _redirect_for_id(stale_id: str) -> Optional[str]:
+            """Return a written xml:id to substitute for a dangling stale_id."""
+            # Direct transparent_redirect lookup by docname
+            owning_doc = id_to_docname.get(stale_id)
+            if owning_doc:
+                redir = self.transparent_redirect.get(owning_doc)
+                if redir and redir in written_ids:
+                    return redir
+                # Try the doc's top_id directly
+                top = self.doc_top_xmlid.get(owning_doc)
+                if top and top in written_ids:
+                    return top
+            return None
+
+        dangling_fixed = 0
+        for p in chapter_paths:
+            try:
+                tree = ET.parse(p)
+            except Exception:
+                continue
+            root4 = tree.getroot()
+            changed = False
+            for el in root4.iter():
+                if strip_ns(el.tag) != "xref":
+                    continue
+                ref = el.get("ref")
+                if not ref or ref in written_ids:
+                    continue
+                # Dangling ref — try to remap
+                replacement = _redirect_for_id(ref)
+                if replacement:
+                    el.set("ref", replacement)
+                    changed = True
+                    dangling_fixed += 1
+            if changed:
+                tree.write(p, encoding="utf-8", xml_declaration=True)
+
         # --- Pass 4: audit all surviving provisional xrefs in output files ---
         provisional_audit: List[Dict] = []
         for p in chapter_paths:
@@ -2355,6 +2428,7 @@ class Converter:
             "slug_rescue_fixed": slug_fixed,
             "provisional_remaining_after_slug_rescue": slug_remaining,
             "class_refs_converted_to_url": class_fixed,
+            "dangling_xrefs_remapped": dangling_fixed,
             "provisional_remaining_final": len(provisional_audit),
             "provisional_xrefs_final": provisional_audit,
             "chapter_files_written": len(chapter_paths),
