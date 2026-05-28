@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v35)
+"""sphinx_xml_to_pretext.py  (v36)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v35 (this version):
+Key improvements over v36 (this version):
+- Fixed internal class-reference refuri links. Sphinx emits cross-references
+  to Godot API class pages as <reference internal="1" refuri="../../classes/
+  class_vector3#class-vector3">. Because the classes/ subtree is excluded from
+  doc_to_path (unless --include-classes is set), _resolve_relative_refuri
+  returned None for these, causing them to fall through to provisional xrefs.
+  Fix: in the reference handler, before calling _resolve_relative_refuri,
+  check the refuri against _CLASSES_REFURI_RE. If it matches a classes/
+  path, build the external Godot API URL directly (same destination as
+  Fix #1 CamelCase refs in Pass 3) and emit a <url> element. This catches
+  all :class:`Foo` and :ref:`text <class-foo-...>` cross-references that
+  Sphinx resolved at HTML-build time into relative file links.
+
+Key improvements over v35:
 - Pass 3 now converts three additional categories of provisional xrefs to
   external Godot documentation URLs (Fix #1, #3, #4 from the report analysis):
   Fix #1: Bare CamelCase Godot class names (e.g. "Viewport", "CharacterBody3D")
@@ -483,6 +496,13 @@ _CLASS_REF_RE = re.compile(
     r'(?:-(?:' + _MEMBER_KINDS + r')-(.+))?$'
 )
 _TOP_ENUM_RE = re.compile(r'^enum-([a-z0-9]+)-(.+)$')
+
+# Matches relative refuri paths pointing at the Godot class reference,
+# e.g. "../../classes/class_vector3#class-vector3"
+#      "../classes/class_node.html"
+_CLASSES_REFURI_RE = re.compile(
+    r'(?:^|/)classes/class_([a-z0-9_]+)(?:\.html)?(?:#(.+))?$'
+)
 
 # Godot Engine singleton members referenced as "Engine.member_name"
 # These come from :func:`Engine.get_license_text` etc. in RST.
@@ -1145,6 +1165,22 @@ class Converter:
             #   refuri="../editor/index.html"
             #   refuri="../../tutorials/editor/index.html#some-anchor"
             if refuri:
+                # Special case: refuri pointing at the Godot class reference,
+                # e.g. "../../classes/class_vector3#class-vector3".
+                # These docs are excluded from doc_to_path (--include-classes),
+                # so _resolve_relative_refuri will never find them. Build the
+                # external Godot API URL directly instead.
+                m_cls = _CLASSES_REFURI_RE.search(refuri)
+                if m_cls:
+                    classname = m_cls.group(1)
+                    anchor = m_cls.group(2)
+                    href = (f"https://docs.godotengine.org/en/"
+                            f"{self.godot_version}/classes/class_{classname}.html")
+                    if anchor:
+                        href += f"#{anchor}"
+                    u = ET.Element("url", {"href": href})
+                    u.text = text or classname
+                    return u
                 resolved = self._resolve_relative_refuri(docname, refuri)
                 if resolved:
                     if text:
