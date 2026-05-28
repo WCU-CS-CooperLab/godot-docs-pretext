@@ -1,9 +1,33 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v36)
+"""sphinx_xml_to_pretext.py  (v37)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v36 (this version):
+Key improvements over v37 (this version):
+- Resolved the final 107 provisional xrefs by extending _provisional_to_godot_url
+  and the Pass 3 candidate check with seven new URL patterns:
+  5.  HTML5 Engine config props (canvas, mainPack, onExecute, etc.)
+      -> tutorials/export/html5_exportable_web.html#<prop>
+  6.  Plain "class reference" / "Class Reference" text links
+      -> classes/index.html
+  7.  @GlobalScope_Key / @GlobalScope_MouseButton enum refs
+      -> class_@globalscope.html#enum-globalscope-<slug>
+  8.  @GlobalScope.method() qualified refs
+      -> class_@globalscope.html#method-globalscope-<slug>
+  9.  @GDScript.@annotation qualified refs
+      -> class_@gdscript.html#annotation-gdscript-<slug>
+  10. Bare @GlobalScope page ref
+      -> class_@globalscope.html
+  11. @export_*, @tool, @warning_ignore GDScript annotation decorators
+      -> class_@gdscript.html#annotation-gdscript-<slug>
+  12. PROPERTY_USAGE_* ALL_CAPS constants
+      -> class_@globalscope.html#constant-<slug>
+  13. snake_case @GlobalScope built-in functions (print(), sin, lerp(), etc.)
+      -> class_@globalscope.html#method-globalscope-<slug>
+  The one remaining provisional (doc-making-plugins-template-code, 1 occurrence)
+  requires the actual docname to be present in the build to resolve internally.
+
+Key improvements over v36:
 - Fixed internal class-reference refuri links. Sphinx emits cross-references
   to Godot API class pages as <reference internal="1" refuri="../../classes/
   class_vector3#class-vector3">. Because the classes/ subtree is excluded from
@@ -505,14 +529,42 @@ _CLASSES_REFURI_RE = re.compile(
 )
 
 # Godot Engine singleton members referenced as "Engine.member_name"
-# These come from :func:`Engine.get_license_text` etc. in RST.
-# The GDScript Engine singleton page is class_engine.html.
 _ENGINE_MEMBER_RE = re.compile(r'^Engine\.([A-Za-z_][A-Za-z0-9_]*)\(?\)?$')
 
-# HTML5 JS export API: Engine.prototype.* and Engine.load/unload/isWebGLAvailable
-# Documented at the HTML5 export page rather than the class reference.
+# HTML5 JS export API: Engine.prototype.* and certain Engine.* names
 _ENGINE_JS_NAMES = frozenset({
     "load", "unload", "isWebGLAvailable",
+})
+
+# HTML5 Engine config object properties (from Engine.prototype config docs)
+_ENGINE_JS_CONFIG_PROPS = frozenset({
+    "unloadAfterInit", "canvas", "executable", "mainPack", "locale",
+    "canvasResizePolicy", "args", "onExecute", "onExit", "onProgress",
+    "onPrint", "onPrintError",
+})
+
+# @GlobalScope built-in functions (snake_case, with or without parens)
+# These all resolve to class_@globalscope.html#method-globalscope-<slug>
+_GLOBALSCOPE_FUNC_RE = re.compile(r'^([a-z][a-z0-9_]*)\(?\)?$')
+
+# @GlobalScope constants like PROPERTY_USAGE_STORAGE
+_GLOBALSCOPE_CONST_RE = re.compile(r'^[A-Z][A-Z0-9_]+$')
+
+# @GDScript annotation names like @export_file, @tool, @warning_ignore
+_GDSCRIPT_ANNOT_RE = re.compile(r'^@([a-z][a-z0-9_]*)$')
+
+# @GlobalScope enum value refs like @GlobalScope_Key, @GlobalScope_MouseButton
+_GLOBALSCOPE_ENUM_RE = re.compile(r'^@GlobalScope_(.+)$')
+
+# Qualified @GlobalScope.method() refs
+_GLOBALSCOPE_METHOD_RE = re.compile(r'^@GlobalScope\.([A-Za-z_][A-Za-z0-9_]*)\(?\)?$')
+
+# Qualified @GDScript.@annotation refs
+_GDSCRIPT_QUAL_RE = re.compile(r'^@GDScript\.@([A-Za-z_][A-Za-z0-9_]*)$')
+
+# Plain text links to the class reference index
+_CLASS_REF_TEXT = frozenset({
+    "class reference", "Class Reference", "GDScript class reference",
 })
 
 
@@ -552,20 +604,67 @@ def _provisional_to_godot_url(prov: str, version: str) -> Optional[str]:
                 f"shading_language.html#{anchor}")
 
     # 4. Engine.* references
-    #    Engine.prototype.* and the three JS-only names -> HTML5 export page
-    #    All other Engine.<member> -> class_engine.html
     m3 = _ENGINE_MEMBER_RE.match(prov)
     if m3:
         member = m3.group(1)
         if member in _ENGINE_JS_NAMES:
             return (f"{base_tutorials}/export/"
                     f"html5_exportable_web.html#{prov.rstrip('()')}")
-        # GDScript Engine singleton member
         member_slug = re.sub(r'[^a-z0-9]+', '-', member.lower()).strip('-')
         return f"{base_classes}/class_engine.html#method-engine-{member_slug}"
     if prov.startswith("Engine.prototype."):
         return (f"{base_tutorials}/export/"
                 f"html5_exportable_web.html#{prov.rstrip('()')}")
+
+    # 5. HTML5 Engine config object properties (canvas, mainPack, onExecute, etc.)
+    if prov in _ENGINE_JS_CONFIG_PROPS:
+        return f"{base_tutorials}/export/html5_exportable_web.html#{prov}"
+
+    # 6. Plain text links to the Godot class reference index
+    if prov in _CLASS_REF_TEXT:
+        return f"{base_classes}/index.html"
+
+    # 7. @GlobalScope enum value refs: @GlobalScope_Key, @GlobalScope_MouseButton
+    m_gs_enum = _GLOBALSCOPE_ENUM_RE.match(prov)
+    if m_gs_enum:
+        slug = re.sub(r'[^a-z0-9]+', '-', m_gs_enum.group(1).lower()).strip('-')
+        return f"{base_classes}/class_@globalscope.html#enum-globalscope-{slug}"
+
+    # 8. Qualified @GlobalScope.method() refs
+    m_gs_method = _GLOBALSCOPE_METHOD_RE.match(prov)
+    if m_gs_method:
+        slug = re.sub(r'[^a-z0-9]+', '-', m_gs_method.group(1).lower()).strip('-')
+        return f"{base_classes}/class_@globalscope.html#method-globalscope-{slug}"
+
+    # 9. Qualified @GDScript.@annotation refs
+    m_gds_qual = _GDSCRIPT_QUAL_RE.match(prov)
+    if m_gds_qual:
+        slug = re.sub(r'[^a-z0-9]+', '-', m_gds_qual.group(1).lower()).strip('-')
+        return f"{base_classes}/class_@gdscript.html#annotation-gdscript-{slug}"
+
+    # 10. Bare @GlobalScope page ref
+    if prov == "@GlobalScope":
+        return f"{base_classes}/class_@globalscope.html"
+
+    # 11. @GDScript annotation decorators: @export_file, @tool, @warning_ignore, etc.
+    m_annot = _GDSCRIPT_ANNOT_RE.match(prov)
+    if m_annot:
+        slug = re.sub(r'[^a-z0-9]+', '-', m_annot.group(1).lower()).strip('-')
+        return f"{base_classes}/class_@gdscript.html#annotation-gdscript-{slug}"
+
+    # 12. PROPERTY_USAGE_* and other ALL_CAPS constants -> @GlobalScope constants
+    m_const = _GLOBALSCOPE_CONST_RE.match(prov)
+    if m_const:
+        slug = re.sub(r'[^a-z0-9]+', '-', prov.lower()).strip('-')
+        return f"{base_classes}/class_@globalscope.html#constant-{slug}"
+
+    # 13. snake_case built-in functions (with or without parens):
+    #     print(), push_error(), sin, lerp(), abs(), preload, load, ease, etc.
+    #     These are all @GlobalScope built-ins.
+    m_func = _GLOBALSCOPE_FUNC_RE.match(prov)
+    if m_func:
+        slug = re.sub(r'[^a-z0-9]+', '-', m_func.group(1).lower()).strip('-')
+        return f"{base_classes}/class_@globalscope.html#method-globalscope-{slug}"
 
     return None
 
@@ -605,9 +704,14 @@ def _class_ref_third_pass(
             is_candidate = (
                 prov.startswith("class-")
                 or prov.startswith("enum-")
-                or re.match(r'^[A-Z][a-zA-Z0-9]+$', prov)
                 or prov.startswith("shader-func-")
                 or prov.startswith("Engine.")
+                or prov.startswith("@")
+                or prov in _ENGINE_JS_CONFIG_PROPS
+                or prov in _CLASS_REF_TEXT
+                or bool(re.match(r'^[A-Z][a-zA-Z0-9]+$', prov))
+                or bool(_GLOBALSCOPE_CONST_RE.match(prov))
+                or bool(_GLOBALSCOPE_FUNC_RE.match(prov))
             )
             if not is_candidate:
                 remaining += 1
