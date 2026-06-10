@@ -1,9 +1,30 @@
 #!/usr/bin/env python3
-"""sphinx_xml_to_pretext.py  (v37)
+"""sphinx_xml_to_pretext.py  (v39)
 
 Converts Sphinx XML builder output (_build/xml/) into modular PreTeXt.
 
-Key improvements over v37 (this version):
+Key improvements over v39 (this version):
+- Removed all hoisting logic from convert_doc_as. The section-into-chapter
+  hoist (collapsing a sole root section into its parent chapter element) has
+  been stripped entirely so the toctree structure drives the output without
+  any post-processing reshaping. Each Sphinx XML document is now converted
+  exactly as-is: its sections remain nested inside the chapter element.
+
+Key improvements over v38:
+- Always hoist a chapter's sole root section into the chapter element.
+  Previously the hoist was blocked by two guards: (a) sole_id != top_id
+  caused a fallthrough to nested rendering, and (b) has_xi_children=True
+  suppressed hoisting entirely. Both guards have been removed:
+  (a) When sole_id differs from top_id, we now remap sole_id -> top_id in
+      id_map so existing xrefs still resolve, then proceed with the hoist.
+      Any that slip through are caught by Pass 4a's dangling-ref remap.
+  (b) When has_xi_children=True we hoist the section's block content (text,
+      code, admonitions) directly into the chapter, but drop any internal
+      sub-sections — the xi:included toctree children supply those. This
+      means clicking a chapter immediately shows the intro text rather than
+      a TOC page, regardless of whether the chapter has sub-pages.
+
+Key improvements over v37:
 - Resolved the final 107 provisional xrefs by extending _provisional_to_godot_url
   and the Pass 3 candidate check with seven new URL patterns:
   5.  HTML5 Engine config props (canvas, mainPack, onExecute, etc.)
@@ -2115,50 +2136,6 @@ class Converter:
                 blocks_before.append(blk)
             else:
                 blocks_after.append(blk)
-
-        # Hoist single root section: if the document has no body content of
-        # its own and contains exactly one section, inline that section's
-        # children directly into the chapter rather than nesting
-        # <chapter><section>...</section></chapter>.  PreTeXt renders a
-        # chapter with only a <section> child as a TOC page rather than
-        # showing the content directly.
-        if (
-            not blocks_before
-            and not blocks_after
-            and len(sections) == 1
-            and not has_xi_children
-        ):
-            sole = sections[0]
-            sole_id = sole.get("xml:id")
-            # Only hoist when the section's xml:id matches the doc's top_id.
-            # When they differ, both ids may have live xrefs pointing at them
-            # from other documents, and XML only allows one xml:id per element.
-            # Hoisting in the mismatched case would orphan one set of xrefs.
-            if sole_id and sole_id != top_id:
-                # Different ids: register section id -> top_id alias so
-                # section-level xrefs resolve to the chapter, but don't hoist.
-                self.id_map[(docname, sole_id)] = top_id
-                self.id_map[(docname, norm_key(sole_id))] = top_id
-                # Fall through to normal rendering (section stays nested)
-                for b in blocks_before:
-                    container.append(b)
-                for s in sections:
-                    container.append(s)
-                for b in blocks_after:
-                    container.append(b)
-                return container
-            # Copy section title only if meaningfully different from chapter
-            chapter_title_text = get_all_text(title_node) if title_node is not None else ""
-            sole_title_el = next((c for c in sole if c.tag == "title"), None)
-            sole_title_text = get_all_text(sole_title_el) if sole_title_el is not None else ""
-            # Copy all children of the sole section into the chapter
-            for child_el in sole:
-                if child_el.tag == "title":
-                    if sole_title_text and sole_title_text != chapter_title_text:
-                        ET.SubElement(container, "title").text = sole_title_text
-                    continue
-                container.append(child_el)
-            return container
 
         # Place all content directly: blocks first, then sections.
         # No <introduction> or <conclusion> wrappers — these cause

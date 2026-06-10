@@ -19,6 +19,8 @@ pretext/generated-assets
 pretext/.cache
 pretext/.error_schema.log
 
+.godot/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
