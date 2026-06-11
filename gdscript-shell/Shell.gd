@@ -18,6 +18,8 @@ const Test  := preload("res://addons/gdpractice/tester/test.gd")
 var _practice: Node = null
 var _solution: Node = null
 var _test: Test = null
+var _parent_origin: String = "*"
+
 
 # Keeps the JavaScriptBridge callback alive for the lifetime of this node.
 # If this is not stored, it gets garbage collected and stops working.
@@ -62,7 +64,9 @@ func _on_js_message(args: Array) -> void:
 		"pck":   str(raw.pck)   if "pck"   in raw else "",
 		"scene": str(raw.scene) if "scene" in raw else "",
 		"code":  str(raw.code)  if "code"  in raw else "",
+		"origin": str(raw.origin) if "origin" in raw else "*",
 	}
+	_parent_origin = payload["origin"]
 	_load_exercise(payload)
 
 
@@ -308,7 +312,7 @@ func _post_error(message: String) -> void:
 # <iframe> (production) or the top-level window (testing).
 # ------------------------------------------------------------
 func _post_to_runestone(data: Dictionary) -> void:
-	print("Shell _post_to_runestone called") 
+	print("Shell _post_to_runestone called, parent origin:", _parent_origin) 
 	if OS.get_name() != "Web":
 		print("Shell (non-web postMessage): ", JSON.stringify(data))
 		return
@@ -318,6 +322,6 @@ func _post_to_runestone(data: Dictionary) -> void:
 	
 	var json := JSON.stringify(data)
 	JavaScriptBridge.eval(
-		"window.parent.postMessage(%s, '*');" % json,
+		"window.parent.postMessage(%s, '%s');" % [json, _parent_origin],
 		true
 	)
