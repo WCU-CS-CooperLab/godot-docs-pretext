@@ -1,5 +1,6 @@
 ## This class is used by [b]instructors[/b] to validate practices based on a direct comparisson
 ## with the solution.
+class_name PracticeTest 
 extends Node
 
 

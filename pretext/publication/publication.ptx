@@ -40,6 +40,46 @@
       <!-- <qrcode image="image.png" /> -->
   </common>
 
+  <html>
+        <!-- 
+          ======================================================================
+          GODOT DOCS / SALEM THEME PALETTE CONFIGURATION
+          ======================================================================
+          
+          * theme: "salem" is built for wide layouts and interactive widgets.
+          * palette: "slate" provides a neutral dark/light base that pairs well 
+            with Godot's design.
+          
+          * color-main (#20252C - Godot Charcoal): 
+            Changes the top navbar, layout header blocks, and main structural boundaries.
+            
+          * color-do (not #478CBF - Godot Blue, instead #356D96 - High Contrast Godot-like Blue): 
+            Changes active/hands-on blocks. This applies directly to your <exercise> 
+            tags, <activity> fields, ActiveCode boxes, and Parsons puzzles.
+            
+          * color-fact (#41B883 - Godot Green, instead #2C7D59 - High Contrast Godot-like Green): 
+            Changes foundational reference blocks. This colors your <definition>, 
+            <theorem>, and <lemma> boxes.
+            
+          * color-meta (#E11D48 - Salmon Rose/Accent): 
+            Changes supplementary guide text blocks, including <note>, <warning>, 
+            <remark>, and <objectives>.
+            
+          * provide-dark-mode: Adds the native contrast switch toggle in the header.
+          * primary-color-dark (#90cdf4): The primary text/link color used when 
+            the reader flips to dark mode.
+          ======================================================================
+        -->
+        <css theme="salem"
+             palette="slate"
+             color-main="#20252C"
+             color-do="#356D96"
+             color-fact="#2C7D59"
+             color-meta="#E11D48"
+             provide-dark-mode="yes"
+             primary-color-dark="#90cdf4" />
+    </html>
+
 
   <!-- Set where external assets and generated assets will be   -->
   <!-- stored or created.  Directories are relative to the main -->

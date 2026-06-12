@@ -17,7 +17,7 @@ const Test  := preload("res://addons/gdpractice/tester/test.gd")
 # Holds the currently running practice and solution so we can free them on reset.
 var _practice: Node = null
 var _solution: Node = null
-var _test: Test = null
+var _test: PracticeTest = null
 var _parent_origin: String = "*"
 
 
@@ -27,7 +27,7 @@ var _js_callback: JavaScriptObject = null
 
 
 func _ready() -> void:
-	print("Shell _ready called. OS: ", OS.get_name()) 
+	#print("Shell _ready called. OS: ", OS.get_name()) 
 	if OS.get_name() != "Web":
 		# Running in the editor or on desktop.
 		# Call _load_exercise() directly from the Godot debugger for local testing:
@@ -64,6 +64,7 @@ func _on_js_message(args: Array) -> void:
 		"pck":   str(raw.pck)   if "pck"   in raw else "",
 		"scene": str(raw.scene) if "scene" in raw else "",
 		"code":  str(raw.code)  if "code"  in raw else "",
+		"test":  str(raw.test)  if "test"  in raw else "",
 		"origin": str(raw.origin) if "origin" in raw else "*",
 	}
 	_parent_origin = payload["origin"]
@@ -85,6 +86,7 @@ func _load_exercise(payload: Dictionary) -> void:
 	var pck_path: String    = payload.get("pck", "")
 	var scene_path: String  = payload.get("scene", "")
 	var student_code: String = payload.get("code", "")
+	var test_code: String =    payload.get("test", "")
 
 	if scene_path.is_empty():
 		_post_error("No scene path provided.")
@@ -94,7 +96,7 @@ func _load_exercise(payload: Dictionary) -> void:
 	# On web, the path is a URL relative to the directory containing index.html.
 	# On desktop it is a filesystem path, useful for local testing.
 	if not pck_path.is_empty():
-		print("Shell: fetching pck from: ", pck_path)
+		#print("Shell: fetching pck from: ", pck_path)
 		var http := HTTPRequest.new()
 		add_child(http)
 		http.request(pck_path)
@@ -165,14 +167,21 @@ func _load_exercise(payload: Dictionary) -> void:
 		_solution.visible = false
 	add_child(_solution)
 
-	# ── Step 6: load and run the test.gd for this exercise ───────────────────
-	# test.gd lives alongside the solution scene.
-	var test_script_path: String = Paths.to_solution(scene_path).get_base_dir().path_join("test.gd")
-	if not ResourceLoader.exists(test_script_path):
-		_post_error("Test script not found: " + test_script_path)
+	# ── Step 6: 
+	# Create a GDScript resource from the testing code string and attach it
+	# to the practice scene root. 
+	var test_script : Script = GDScript.new()
+	#print("Shell: test_code received:\n", test_code)
+	test_script.source_code = test_code
+	var test_reload_err := test_script.reload()
+
+	if test_reload_err != OK:
+		# Syntax error — report back without crashing. Don't add the scene yet.
+		_post_error("Syntax error in testing code. Check for typos and indentation.")
 		return
 
-	var test_script: Script = ResourceLoader.load(test_script_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	#print("Shell: test script base type: ", test_script.get_instance_base_type())
+
 	_test = test_script.new()
 	add_child(_test)
 
@@ -312,7 +321,7 @@ func _post_error(message: String) -> void:
 # <iframe> (production) or the top-level window (testing).
 # ------------------------------------------------------------
 func _post_to_runestone(data: Dictionary) -> void:
-	print("Shell _post_to_runestone called, parent origin:", _parent_origin) 
+	#print("Shell _post_to_runestone called, parent origin:", _parent_origin) 
 	if OS.get_name() != "Web":
 		print("Shell (non-web postMessage): ", JSON.stringify(data))
 		return

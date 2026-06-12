@@ -1,0 +1,31 @@
+/* ==========================================================================
+   🌙 HIGH-CONTRAST "DARK-MODE" OVERRIDE (CRANKED UP)
+   ========================================================================= */
+
+html.dark-mode .remark-like:not(.knowl__content, .born-hidden-knowl) {
+  /* 1. Make the accent border thicker (6px) and brighter */
+  --remark-like-border-color: #FF4A75 !important;
+  border-left: 4px solid #FF4A75 !important; 
+  
+  /* 2. Give the box a subtle frame on the other sides so it doesn't blend into the void */
+  border-top: 1px solid #3D2E36 !important;
+  border-right: 1px solid #3D2E36 !important;
+  border-bottom: 1px solid #3D2E36 !important;
+
+  /* 3. Adjust background to a slightly lighter, distinct charcoal-wine shade */
+  --remark-like-body-background: #251B20 !important;
+  background-color: #36272F !important;
+}
+
+/* Force the block header title (e.g., "Remark 1.1") to look bright and bold */
+html.dark-mode .remark-like:not(.knowl__content, .born-hidden-knowl) .heading .title {
+  color: #FF7597 !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 10px rgba(255, 74, 117, 0.15); /* Gives the text a very subtle, soft neon depth */
+}
+
+/* Push the paragraph text to crisp white for maximum legibility */
+html.dark-mode .remark-like:not(.knowl__content, .born-hidden-knowl) p,
+html.dark-mode .remark-like:not(.knowl__content, .born-hidden-knowl) .p {
+  color: #FFFFFF !important;
+}
