@@ -33,10 +33,12 @@ class Check:
 		# This check is disabled if any of its dependencies is disabled or has not passed.
 		for dependency: Check in dependencies:
 			if "is_disabled" in dependency.cache and dependency.cache.is_disabled:
+				hint = "The dependency " + dependency.description + " must pass first."
 				result = true
 				break
 
 			if not await dependency.has_passed():
+				hint = "The dependency " + dependency.description + " must pass first."
 				result = true
 				break
 
