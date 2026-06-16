@@ -7,10 +7,12 @@
 	  const known_layout_pattern = /^window\.parent\.postMessage\((\{.*\}), ['](.*?)[']\);$/s;
 	  const gShellPattern = /^window.godotShell = {};$/s;
       const firstPostPattern = /^window\.parent\.postMessage\(\{"source":"godot-activecode","subject":"runestone","type":"ready"\}, ['][*][']\);/s
-	  const match = js_code.match(known_layout_pattern);
+	  const printCapturePattern = /\(function\(\) \{\n\s+var _origLog = console\.log\.bind\(console\);\n\s+console\.log = function\(\) {\n\s+_origLog\.apply\(console, arguments\);\n\s+var text = Array\.prototype\.join\.call\(arguments, ['] [']\);\n\s+window\.parent\.postMessage\(\{\n\s+source:  [']godot-activecode['],\n\s+subject: [']runestone['],\n\s+type:    [']print['],\n\s+text:    text\s+\}, ['][*][']\);\n\s+};\n\s+\}\)\(\);/s
+      const match = js_code.match(known_layout_pattern);
 	  const is_godot_shell = js_code.match(gShellPattern);
 	  const is_first_pattern = js_code.match(firstPostPattern);
-	  if (is_godot_shell || is_first_pattern) {
+	  const is_print_capture_pattern = js_code.match(printCapturePattern);
+	  if (is_godot_shell || is_first_pattern || is_print_capture_pattern) {
 		  // pass through
 	  } else if (!match) {
 		console.warn("Security Drop: java script not executed: ", js_code);

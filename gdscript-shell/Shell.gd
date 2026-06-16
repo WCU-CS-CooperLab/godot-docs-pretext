@@ -8,6 +8,8 @@
 #   4. Injects the student's code string into the practice scene's root script.
 #   5. Runs GDPractice's test.gd pipeline against both scenes.
 #   6. Posts results back to the Runestone host page via postMessage.
+#   7. Forwards print() output to the Runestone host page via postMessage,
+#      so it appears in the activecode output area rather than the console.
 
 extends Node
 
@@ -27,24 +29,39 @@ var _js_callback: JavaScriptObject = null
 
 
 func _ready() -> void:
-	#print("Shell _ready called. OS: ", OS.get_name()) 
 	if OS.get_name() != "Web":
-		# Running in the editor or on desktop.
-		# Call _load_exercise() directly from the Godot debugger for local testing:
-		#   get_node("/root/Shell")._load_exercise({
-		#       "pck":      "",
-		#       "scene":    "res://practices/L1.P1.example/practice.tscn",
-		#       "code":     "extends Node2D\nfunc _ready():\n\tpass"
-		#   })
 		push_warning("Shell: not running as a web export; JavaScriptBridge is inactive.")
 		return
 
 	# Expose a single callable on window.godotShell so activecode.js can call it.
-	# activecode.js calls: window.godotShell.loadExercise({ pck, scene, code })
+	# activecode.js calls:
+	# window.godotShell.loadExercise({ pck, scene, code, test })
 	_js_callback = JavaScriptBridge.create_callback(_on_js_message)
 	JavaScriptBridge.eval("window.godotShell = {};", true)
 	var godot_shell = JavaScriptBridge.get_interface("godotShell")
 	godot_shell.loadExercise = _js_callback
+
+	# Connect console.log inside this iframe so that Godot's print()
+	# output (which the web export routes to console.log) is forwarded to
+	# the Runestone host page as a { type: "print" } postMessage, in addition
+	# to still appearing in the browser console.
+	# activecode_gdscript.js handles these messages and appends each line to
+	# the activecode output area so students can see their print() output.
+	JavaScriptBridge.eval("""
+		(function() {
+			var _origLog = console.log.bind(console);
+			console.log = function() {
+				_origLog.apply(console, arguments);
+				var text = Array.prototype.join.call(arguments, ' ');
+				window.parent.postMessage({
+					source:  'godot-activecode',
+					subject: 'runestone',
+					type:    'print',
+					text:    text
+				}, '*');
+			};
+		})();
+	""", true)
 
 	# Tell the host page we're ready to receive exercises.
 	_post_to_runestone({ "type": "ready" })
@@ -81,6 +98,7 @@ func _on_js_message(args: Array) -> void:
 #   scene — res:// path of the practice scene inside the .pck,
 #            e.g. "res://practices/L1.P1.example/practice.tscn"
 #   code  — the student's GDScript source as a plain string
+#   test  — the instructor's GDScript test source as a plain string
 # ------------------------------------------------------------
 func _load_exercise(payload: Dictionary) -> void:
 	var pck_path: String    = payload.get("pck", "")
@@ -94,19 +112,17 @@ func _load_exercise(payload: Dictionary) -> void:
 
 	# ── Step 1: load the per-exercise .pck if one was specified ───────────────
 	# On web, the path is a URL relative to the directory containing index.html.
-	# On desktop it is a filesystem path, useful for local testing.
 	if not pck_path.is_empty():
-		#print("Shell: fetching pck from: ", pck_path)
 		var http := HTTPRequest.new()
 		add_child(http)
 		http.request(pck_path)
 		var response = await http.request_completed
 		http.queue_free()
-		
+
 		var result_code  = response[0]
 		var http_code    = response[1]
 		var body: PackedByteArray = response[3]
-		
+
 		if result_code != HTTPRequest.RESULT_SUCCESS or http_code != 200:
 			_post_error("Could not fetch exercise pack: %s (HTTP %d)" % [pck_path, http_code])
 			return
@@ -117,12 +133,12 @@ func _load_exercise(payload: Dictionary) -> void:
 		var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 		file.store_buffer(body)
 		file.close()
-		
+
 		var ok := ProjectSettings.load_resource_pack(tmp_path)
 		if not ok:
 			_post_error("Could not mount exercise pack: " + pck_path)
 			return
-			
+
 	# ── Step 2: tear down any previously running exercise ─────────────────────
 	_teardown()
 	# Wait one frame to let queue_free() fully process before adding new nodes.
@@ -171,7 +187,6 @@ func _load_exercise(payload: Dictionary) -> void:
 	# Create a GDScript resource from the testing code string and attach it
 	# to the practice scene root. 
 	var test_script : Script = GDScript.new()
-	#print("Shell: test_code received:\n", test_code)
 	test_script.source_code = test_code
 	var test_reload_err := test_script.reload()
 
@@ -179,8 +194,6 @@ func _load_exercise(payload: Dictionary) -> void:
 		# Syntax error — report back without crashing. Don't add the scene yet.
 		_post_error("Syntax error in testing code. Check for typos and indentation.")
 		return
-
-	#print("Shell: test script base type: ", test_script.get_instance_base_type())
 
 	_test = test_script.new()
 	add_child(_test)
@@ -321,7 +334,6 @@ func _post_error(message: String) -> void:
 # <iframe> (production) or the top-level window (testing).
 # ------------------------------------------------------------
 func _post_to_runestone(data: Dictionary) -> void:
-	#print("Shell _post_to_runestone called, parent origin:", _parent_origin) 
 	if OS.get_name() != "Web":
 		print("Shell (non-web postMessage): ", JSON.stringify(data))
 		return
