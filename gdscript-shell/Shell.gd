@@ -232,6 +232,8 @@ func _run_checks() -> void:
 	# ── Build and post the result payload ────────────────────────────────────
 	var completion: int = _test.get_completion()  # 1 = all passed, 0 = any failed
 	var passed: bool = completion == 1
+	var score: float = 0
+	var total: float = 0
 
 	var check_results: Array = []
 	for check in _test.checks:
@@ -241,6 +243,8 @@ func _run_checks() -> void:
 			"status":      _status_to_string(check.status),
 			"passed":      check.status == Test.Status.PASS,
 		}
+		score += 1 if check.status == Test.Status.PASS else 0
+		total += 1
 		# Include subchecks so Runestone can show granular feedback.
 		var subchecks: Array = []
 		for subcheck in check.subchecks:
@@ -250,13 +254,16 @@ func _run_checks() -> void:
 				"status":      _status_to_string(subcheck.status),
 				"passed":      subcheck.status == Test.Status.PASS,
 			})
+			score += 1 if check.status == Test.Status.PASS else 0
+			total += 1
+		
 		check_data["subchecks"] = subchecks
 		check_results.append(check_data)
 
 	_post_to_runestone({
 		"type":    "result",
 		"passed":  passed,
-		"score":   1.0 if passed else 0.0,
+		"score":   0.0 if total == 0.0 else score/total,
 		"checks":  check_results,
 	})
 
