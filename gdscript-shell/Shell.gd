@@ -10,16 +10,19 @@
 #   6. Posts results back to the Runestone host page via postMessage.
 #   7. Forwards print() output to the Runestone host page via postMessage,
 #      so it appears in the activecode output area rather than the console.
+#   8. Optionally uses split layout to see the student submission vs. the solution.
 
 extends Node
 
 const Paths := preload("res://addons/gdpractice/paths.gd")
 const Test  := preload("res://addons/gdpractice/tester/test.gd")
+const SplitLayoutScene := preload("res://addons/gdpractice/tester/split_layout/split_layout.tscn")
 
 # Holds the currently running practice and solution so we can free them on reset.
 var _practice: Node = null
 var _solution: Node = null
 var _test: PracticeTest = null
+var _split_layout: Node = null
 var _parent_origin: String = "*"
 
 
@@ -196,7 +199,6 @@ func _load_exercise(payload: Dictionary) -> void:
 		return
 
 	_practice.set_script(student_script)
-	add_child(_practice)
 
 	# ── Step 5: instantiate the solution scene ────────────────────────────────
 	# GDPractice requires both scenes for its comparison-based check system.
@@ -208,10 +210,6 @@ func _load_exercise(payload: Dictionary) -> void:
 
 	var solution_packed: PackedScene = ResourceLoader.load(solution_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	_solution = solution_packed.instantiate()
-	# Add solution as a child but hide it — it only exists for state comparison.
-	if _solution is CanvasItem:
-		_solution.visible = false
-	add_child(_solution)
 
 	# ── Step 6: 
 	# Create a GDScript resource from the testing code string and attach it
@@ -227,6 +225,21 @@ func _load_exercise(payload: Dictionary) -> void:
 
 	_test = test_script.new()
 	add_child(_test)
+
+	# ── Step 7: add scenes to the tree ───────────────────────────────────────
+	# If the test requests side-by-side mode, instantiate the SplitLayout and
+	# let it own both scenes inside its subviewports. Otherwise add the practice
+	# directly and keep the solution hidden as a plain child.
+	if _test.side_by_side:
+		_split_layout = SplitLayoutScene.instantiate()
+		add_child(_split_layout)
+		_split_layout.refresh([_practice, _solution])
+	else:
+		add_child(_practice)
+		# Add solution as a child but hide it — visible only exists for CanvasItems.
+		if _solution is CanvasItem: 
+			_solution.visible = false
+		add_child(_solution)
 
 	# Run the full GDPractice check pipeline.
 	await _run_checks()
@@ -332,6 +345,18 @@ func _check_requirements() -> bool:
 # from the previous exercise run.
 # ------------------------------------------------------------
 func _teardown() -> void:
+	if _split_layout != null:
+		# Explicitly remove scenes from their subviewports before freeing to
+		# avoid any race conditions with split_layout.gd's deferred remove calls.
+		var practice_vp: SubViewport = _split_layout.get_node_or_null("%PracticeSubViewport")
+		var solution_vp: SubViewport = _split_layout.get_node_or_null("%SolutionSubViewport")
+		if practice_vp != null and _practice != null and _practice.get_parent() == practice_vp:
+			practice_vp.remove_child(_practice)
+		if solution_vp != null and _solution != null and _solution.get_parent() == solution_vp:
+			solution_vp.remove_child(_solution)
+		_split_layout.queue_free()
+		_split_layout = null
+
 	if _test != null:
 		_test.queue_free()
 		_test = null

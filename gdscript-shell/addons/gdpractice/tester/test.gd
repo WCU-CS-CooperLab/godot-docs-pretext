@@ -75,6 +75,10 @@ const Utils := preload("../../gdquest_sparkly_bag/sparkly_bag_utils.gd")
 ## automatically.
 const COMMENT_REGEX := "#.*$"
 
+## When true, Shell will show the practice and solution scenes side by side during testing.
+## Set this to true in your test.gd to enable the split layout view.
+var side_by_side := false
+
 enum Status { DISABLED, PASS, FAIL }
 
 var checks: Array[Check] = []
