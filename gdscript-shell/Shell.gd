@@ -33,13 +33,40 @@ func _ready() -> void:
 		push_warning("Shell: not running as a web export; JavaScriptBridge is inactive.")
 		return
 
+	_js_callback = JavaScriptBridge.create_callback(_on_js_message)
+	
+	# Get the iframe's own global window object
+	var window = JavaScriptBridge.get_interface("window")
+	window.godotLoadExerciseCallback = _js_callback
+	
+	# Register a JavaScript message event listener inside the iframe context
+	JavaScriptBridge.eval("""
+		if (typeof window.hostOrigin === 'undefined') {
+		    window.hostOrigin = null;
+	    }
+
+		window.addEventListener('message', (event) => {
+			if (!window.hostOrigin && event.data && event.data.type === 'loadExercise') {
+				window.hostOrigin = event.origin;
+			}
+			
+			if (event.origin !== window.hostOrigin) return;
+			
+			if (event.data && event.data.type === 'loadExercise') {
+				if (window.godotLoadExerciseCallback) {
+					window.godotLoadExerciseCallback(event.data.payload);
+				}
+			}
+		});
+	""", true)
+
 	# Expose a single callable on window.godotShell so activecode.js can call it.
 	# activecode.js calls:
 	# window.godotShell.loadExercise({ pck, scene, code, test })
-	_js_callback = JavaScriptBridge.create_callback(_on_js_message)
-	JavaScriptBridge.eval("window.godotShell = {};", true)
-	var godot_shell = JavaScriptBridge.get_interface("godotShell")
-	godot_shell.loadExercise = _js_callback
+	#_js_callback = JavaScriptBridge.create_callback(_on_js_message)
+	#JavaScriptBridge.eval("window.godotShell = {};", true)
+	#var godot_shell = JavaScriptBridge.get_interface("godotShell")
+	#godot_shell.loadExercise = _js_callback
 
 	# Connect console.log inside this iframe so that Godot's print()
 	# output (which the web export routes to console.log) is forwarded to
@@ -53,12 +80,15 @@ func _ready() -> void:
 			console.log = function() {
 				_origLog.apply(console, arguments);
 				var text = Array.prototype.join.call(arguments, ' ');
+				
+				var target = window.hostOrigin || '*';
+				
 				window.parent.postMessage({
 					source:  'godot-activecode',
 					subject: 'runestone',
 					type:    'print',
 					text:    text
-				}, '*');
+				}, target);
 			};
 		})();
 	""", true)

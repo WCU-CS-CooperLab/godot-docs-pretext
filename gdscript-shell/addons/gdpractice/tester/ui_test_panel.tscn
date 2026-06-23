@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://bnnxfl3thl8qk"]
+[gd_scene format=3 uid="uid://bnnxfl3thl8qk"]
 
 [ext_resource type="Theme" uid="uid://bk3rqtt0xeorm" path="res://addons/gdpractice/assets/theme.tres" id="1_n7obm"]
 [ext_resource type="Script" uid="uid://tie6rb7577kc" path="res://addons/gdpractice/tester/ui_test_panel.gd" id="2_vgmr1"]
@@ -123,7 +123,7 @@ _data = {
 &"testing": SubResource("Animation_p88ms")
 }
 
-[node name="UITestPanel" type="Control"]
+[node name="UITestPanel" type="Control" unique_id=1989669111]
 custom_minimum_size = Vector2(1920, 0)
 layout_mode = 3
 anchors_preset = 15
@@ -134,7 +134,7 @@ grow_vertical = 2
 theme = ExtResource("1_n7obm")
 script = ExtResource("2_vgmr1")
 
-[node name="HBoxContainer" type="HBoxContainer" parent="."]
+[node name="HBoxContainer" type="HBoxContainer" parent="." unique_id=304380732]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -143,32 +143,32 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_type_variation = &"HBoxContainerTester"
 
-[node name="MainPanelContainer" type="PanelContainer" parent="HBoxContainer"]
+[node name="MainPanelContainer" type="PanelContainer" parent="HBoxContainer" unique_id=417034805]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(420, 0)
 layout_mode = 2
 theme_type_variation = &"PanelContainerTester"
 
-[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/MainPanelContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/MainPanelContainer" unique_id=1630148870]
 layout_mode = 2
 theme_type_variation = &"VBoxContainerTester"
 
-[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer" unique_id=320156092]
 custom_minimum_size = Vector2(0, 38)
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"MarginContainerTesterHeader"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainer" unique_id=2075790493]
 layout_mode = 2
 
-[node name="ItemLabel" type="Label" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="ItemLabel" type="Label" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainer/HBoxContainer" unique_id=1728617504]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelTesterItem"
 text = "L0.P0"
 
-[node name="TitleLabel" type="Label" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainer/HBoxContainer"]
+[node name="TitleLabel" type="Label" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainer/HBoxContainer" unique_id=1577829041]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(179, 0)
 layout_mode = 2
@@ -177,27 +177,27 @@ theme_type_variation = &"LabelTesterTitle"
 text = "Title"
 autowrap_mode = 2
 
-[node name="MarginContainerBody" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer"]
+[node name="MarginContainerBody" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer" unique_id=495038836]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="PanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody"]
+[node name="PanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody" unique_id=1195545860]
 layout_mode = 2
 theme_type_variation = &"PanelContainerPractices"
 
-[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer" unique_id=1087364448]
 layout_mode = 2
 theme_type_variation = &"MarginContainerPractices"
 
-[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer" unique_id=1550843319]
 layout_mode = 2
 
-[node name="ToggleX5PanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="ToggleX5PanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer" unique_id=1760432575]
 layout_mode = 2
 size_flags_horizontal = 8
 theme_type_variation = &"PanelContainerButtonTester"
 
-[node name="ToggleX5Button" type="Button" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ToggleX5PanelContainer"]
+[node name="ToggleX5Button" type="Button" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ToggleX5PanelContainer" unique_id=416843374]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(24, 21)
 layout_mode = 2
@@ -205,14 +205,14 @@ theme_type_variation = &"ButtonTester"
 toggle_mode = true
 text = "x5"
 
-[node name="ReportMarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="ReportMarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer" unique_id=583594972]
 layout_mode = 2
 theme_type_variation = &"MarginContainerTesterReport"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ReportMarginContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ReportMarginContainer" unique_id=874656096]
 layout_mode = 2
 
-[node name="ReportTextureRect" type="TextureRect" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ReportMarginContainer/HBoxContainer"]
+[node name="ReportTextureRect" type="TextureRect" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ReportMarginContainer/HBoxContainer" unique_id=159143302]
 unique_name_in_owner = true
 visible = false
 custom_minimum_size = Vector2(20, 0)
@@ -221,43 +221,43 @@ texture = ExtResource("6_7jrhn")
 expand_mode = 5
 stretch_mode = 5
 
-[node name="ReportLabel" type="Label" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ReportMarginContainer/HBoxContainer"]
+[node name="ReportLabel" type="Label" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/ReportMarginContainer/HBoxContainer" unique_id=54125292]
 unique_name_in_owner = true
 layout_mode = 2
 text = "test"
 
-[node name="InputPanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer" instance=ExtResource("7_uxwio")]
+[node name="InputPanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer" unique_id=105680055 instance=ExtResource("7_uxwio")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="LogPanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer"]
+[node name="LogPanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer" unique_id=697380737]
 layout_mode = 2
 theme_type_variation = &"PanelContainerTesterChecks"
 
-[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer" unique_id=533764772]
 layout_mode = 2
 theme_type_variation = &"MarginContainerTesterChecks"
 
-[node name="PanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer/MarginContainer"]
+[node name="PanelContainer" type="PanelContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer/MarginContainer" unique_id=1120662428]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 theme_type_variation = &"PanelContainerTesterChecksInner"
 
-[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer/MarginContainer/PanelContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer/MarginContainer/PanelContainer" unique_id=1973887892]
 layout_mode = 2
 theme_type_variation = &"MarginContainerTesterChecksInner"
 
-[node name="LogVBoxContainer" type="VBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer/MarginContainer/PanelContainer/MarginContainer"]
+[node name="LogVBoxContainer" type="VBoxContainer" parent="HBoxContainer/MainPanelContainer/VBoxContainer/MarginContainerBody/PanelContainer/MarginContainer/VBoxContainer/LogPanelContainer/MarginContainer/PanelContainer/MarginContainer" unique_id=314651257]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"VBoxContainerTester"
 
-[node name="SplitLayout" parent="HBoxContainer" instance=ExtResource("9_q10jc")]
+[node name="SplitLayout" parent="HBoxContainer" unique_id=722837639 instance=ExtResource("9_q10jc")]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="PanelContainerToggle" type="PanelContainer" parent="HBoxContainer/SplitLayout"]
+[node name="PanelContainerToggle" type="PanelContainer" parent="HBoxContainer/SplitLayout" unique_id=1590952962]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 38)
 layout_mode = 0
@@ -266,31 +266,31 @@ offset_right = 33.0
 offset_bottom = 38.0
 theme_type_variation = &"PanelContainerTesterShowTab"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/SplitLayout/PanelContainerToggle"]
+[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/SplitLayout/PanelContainerToggle" unique_id=702218347]
 layout_mode = 2
 theme_type_variation = &"HBoxContainerTester"
 alignment = 2
 
-[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer"]
+[node name="MarginContainer" type="MarginContainer" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer" unique_id=370713743]
 layout_mode = 2
 theme_override_constants/margin_left = 5
 theme_override_constants/margin_top = 0
 theme_override_constants/margin_right = 5
 theme_override_constants/margin_bottom = 0
 
-[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer" unique_id=499477285]
 custom_minimum_size = Vector2(134, 0)
 layout_mode = 2
 alignment = 2
 
-[node name="TextureRect" type="TextureRect" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer/HBoxContainer"]
+[node name="TextureRect" type="TextureRect" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer/HBoxContainer" unique_id=763492660]
 custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 texture = ExtResource("6_fe7lp")
 expand_mode = 1
 stretch_mode = 5
 
-[node name="StatusLabel" type="Label" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer/HBoxContainer"]
+[node name="StatusLabel" type="Label" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer/HBoxContainer" unique_id=1458516581]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"LabelTesterStatusTesting"
@@ -298,16 +298,13 @@ text = "testing..."
 horizontal_alignment = 2
 uppercase = true
 visible_characters_behavior = 2
-visible_ratio = -0.1
 
-[node name="StatusAnimationPlayer" type="AnimationPlayer" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer/HBoxContainer/StatusLabel"]
+[node name="StatusAnimationPlayer" type="AnimationPlayer" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer/MarginContainer/HBoxContainer/StatusLabel" unique_id=1468779771]
 unique_name_in_owner = true
-libraries = {
-"": SubResource("AnimationLibrary_lbhxb")
-}
-autoplay = "testing"
+libraries/ = SubResource("AnimationLibrary_lbhxb")
+autoplay = &"testing"
 
-[node name="ToggleShowButton" type="Button" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer"]
+[node name="ToggleShowButton" type="Button" parent="HBoxContainer/SplitLayout/PanelContainerToggle/HBoxContainer" unique_id=35797607]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(33, 0)
 layout_mode = 2
