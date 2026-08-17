@@ -160,9 +160,16 @@ func _load_exercise(payload: Dictionary) -> void:
 			_post_error("Could not fetch exercise pack: %s (HTTP %d)" % [pck_path, http_code])
 			return
 		
+		# get the correct suffix
+		var suffix := ".pck"
+		if pck_path.ends_with(".zip"):
+			suffix = ".zip"
+		elif not pck_path.ends_with(suffix):
+			_post_error("Wrong extension for exercise pack: " + pck_path)
+			return
 		# Write bytes to a temporary path in Godot's virtual filesystem,
 		# then load from there.
-		var tmp_path := "user://tmp_exercise.pck"
+		var tmp_path := "user://tmp_exercise" + suffix
 		var file := FileAccess.open(tmp_path, FileAccess.WRITE)
 		file.store_buffer(body)
 		file.close()
@@ -214,16 +221,21 @@ func _load_exercise(payload: Dictionary) -> void:
 	# ── Step 6: 
 	# Create a GDScript resource from the testing code string and attach it
 	# to the practice scene root. 
-	var test_script : Script = GDScript.new()
-	test_script.source_code = test_code
-	var test_reload_err := test_script.reload()
+	
+	if test_code.is_empty() or test_code == "<null>":
+		_test = Test.new()
+	else:
+		#print("test code is: " + test_code)
+		var test_script : Script = GDScript.new()
+		test_script.source_code = test_code
+		var test_reload_err := test_script.reload()
 
-	if test_reload_err != OK:
-		# Syntax error — report back without crashing. Don't add the scene yet.
-		_post_error("Syntax error in testing code. Check for typos and indentation.")
-		return
-
-	_test = test_script.new()
+		if test_reload_err != OK:
+			# Syntax error — report back without crashing. Don't add the scene yet.
+			_post_error("Syntax error in testing code. Using default test")
+			_test = Test.new()
+		else:
+			_test = test_script.new()
 	add_child(_test)
 
 	# ── Step 7: add scenes to the tree ───────────────────────────────────────
